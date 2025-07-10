@@ -1,0 +1,36 @@
+{
+  "name": "dataforseo-mcp-server",
+  "description": "A Model Context Protocol (MCP) server for the DataForSEO API",
+  "keywords": ["dataforseo", "mcp", "api", "seo"],
+  "website": "https://github.com/dataforseo/mcp-server-typescript",
+  "repository": "https://github.com/dataforseo/mcp-server-typescript",
+  "success_url": "/http",
+  "env": {
+    "NODE_ENV": {
+      "description": "Node.js environment",
+      "value": "production"
+    },
+    "DATAFORSEO_USERNAME": {
+      "description": "DataForSEO API username",
+      "required": false
+    },
+    "DATAFORSEO_PASSWORD": {
+      "description": "DataForSEO API password",
+      "required": false
+    },
+    "ENABLED_MODULES": {
+      "description": "Comma-separated list of enabled modules",
+      "value": "serp,keywords_data,onpage,labs,backlinks,business_data,domain_analytics"
+    }
+  },
+  "scripts": {
+    "dokku": {
+      "predeploy": "npm run build"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+} 
