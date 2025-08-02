@@ -204,6 +204,11 @@ async function main() {
     });
   });
 
+  // Health check endpoint
+  app.get('/health', (req: Request, res: Response) => {
+    res.json({ status: 'UP' });
+  });
+
   // Start the server
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   app.listen(PORT, () => {
