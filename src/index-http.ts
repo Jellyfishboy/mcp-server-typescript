@@ -117,8 +117,37 @@ async function main() {
     next();
   };
 
-  // Apply basic auth to MCP endpoint
-  app.post('/http', basicAuth, async (req: Request, res: Response) => {
+  // Combined Auth Middleware (Basic OR Bearer)
+  const combinedAuth = (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader?.startsWith('Basic ')) {
+      // Handle Basic auth (existing logic)
+      const base64Credentials = authHeader.split(' ')[1];
+      const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+      const [username, password] = credentials.split(':');
+      
+      if (username && password) {
+        req.username = username;
+        req.password = password;
+      }
+    } else if (authHeader?.startsWith('Bearer ')) {
+      // Handle Bearer auth (treat token as base64 credentials)
+      const token = authHeader.split(' ')[1];
+      const credentials = Buffer.from(token, 'base64').toString('utf-8');
+      const [username, password] = credentials.split(':');
+      
+      if (username && password) {
+        req.username = username;
+        req.password = password;
+      }
+    }
+    
+    next();
+  };
+
+  // Apply combined auth to MCP endpoint
+  app.post('/http', combinedAuth, async (req: Request, res: Response) => {
     // In stateless mode, create a new instance of transport and server for each request
     // to ensure complete isolation. A single instance would cause request ID collisions
     // when multiple clients connect concurrently.
