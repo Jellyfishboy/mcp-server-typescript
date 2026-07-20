@@ -7,6 +7,7 @@ import { initMcpServer } from "./init-mcp-server.js";
 import { buildBasicAuthHeader } from "../core/client/dataforseo.client.js";
 import { getTokenExpiration } from "../core/utils/auth.js";
 import { defaultGlobalToolConfig } from "../core/config/global.tool.js";
+import { providerToolRateLimitMiddleware } from "../core/utils/provider-tool-rate-limit.middleware.js";
 
 // Initialize field configuration if provided
 initializeFieldConfiguration();
@@ -183,8 +184,8 @@ async function main() {
   }
 
   // Apply auth middleware and shared handler to both endpoints
-  app.post('/http', authMiddleware, handleMcpRequest);
-  app.post('/mcp', authMiddleware, handleMcpRequest);
+  app.post('/http', authMiddleware, providerToolRateLimitMiddleware, handleMcpRequest);
+  app.post('/mcp', authMiddleware, providerToolRateLimitMiddleware, handleMcpRequest);
 
   app.get('/http', handleNotAllowed('GET HTTP'));
   app.get('/mcp', handleNotAllowed('GET MCP'));

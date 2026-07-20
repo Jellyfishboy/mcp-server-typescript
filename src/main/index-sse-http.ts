@@ -7,6 +7,7 @@ import { initializeFieldConfiguration } from '../core/config/field-configuration
 import { initMcpServer } from './init-mcp-server.js';
 import { defaultGlobalToolConfig } from '../core/config/global.tool.js';
 import { getTokenExpiration } from '../core/utils/auth.js';
+import { providerToolRateLimitMiddleware } from '../core/utils/provider-tool-rate-limit.middleware.js';
 
 // Initialize field configuration if provided
 initializeFieldConfiguration();
@@ -39,6 +40,7 @@ interface Request extends ExpressRequest {
 interface TransportWithTimestamp {
   transport: StreamableHTTPServerTransport | SSEServerTransport;
   lastActivity: number;
+  accountId?: string;
 }
 
 // Store transports by session ID
@@ -232,8 +234,8 @@ if (!process.env.DATAFORSEO_USERNAME && !process.env.DATAFORSEO_PASSWORD) {
   app.get('/.well-known/oauth-protected-resource/messages', protectedResourceHandler('messages'));
 }
 
-app.post('/http', authMiddleware, handleMcpRequest);
-app.post('/mcp', authMiddleware, handleMcpRequest);
+app.post('/http', authMiddleware, providerToolRateLimitMiddleware, handleMcpRequest);
+app.post('/mcp', authMiddleware, providerToolRateLimitMiddleware, handleMcpRequest);
 
 app.get('/http', handleNotAllowed('GET HTTP'));
 app.get('/mcp', handleNotAllowed('GET MCP'));
@@ -266,12 +268,16 @@ app.get('/sse', authMiddleware, async (req: Request, res: Response) => {
     return;
   }
 
+  const accountId =
+    typeof req.query.account_id === "string" ? req.query.account_id.trim() : undefined;
+
   const transport = new SSEServerTransport('/messages', res);
   
   // Store transport with timestamp
   transports[transport.sessionId] = {
     transport,
-    lastActivity: Date.now()
+    lastActivity: Date.now(),
+    accountId,
   };
 
   // Handle connection cleanup
@@ -296,7 +302,12 @@ app.get('/sse', authMiddleware, async (req: Request, res: Response) => {
   await server.connect(transport);
 });
 
-app.post("/messages", authMiddleware, async (req: Request, res: Response) => {
+app.post("/messages", authMiddleware, (req: Request, res: Response, next: NextFunction) => {
+  const sessionId = req.query.sessionId as string | undefined;
+  const sessionAccountId = sessionId ? transports[sessionId]?.accountId : undefined;
+  (req as Request & { sessionAccountId?: string }).sessionAccountId = sessionAccountId;
+  providerToolRateLimitMiddleware(req, res, next);
+}, async (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
   const resourceMetadataUrl = `${req.protocol}://${req.get('host')}/.well-known/oauth-protected-resource${req.path}`;
 
