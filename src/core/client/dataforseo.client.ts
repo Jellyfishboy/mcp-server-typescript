@@ -1,4 +1,9 @@
 import { defaultGlobalToolConfig } from '../config/global.tool.js';
+import {
+  normalizeMakeRequestOptions,
+  shouldUseFullApiEndpoint,
+} from '../config/request-mode.js';
+import type { MakeRequestOptions } from '../config/request-mode.js';
 import { version } from '../utils/version.js';
 
 export class DataForSEOClient {
@@ -13,13 +18,16 @@ export class DataForSEOClient {
     this.userAgent = `DataForSEO-MCP-TypeScript-SDK/${version}`;
   }
 
-  async makeRequest<T>(endpoint: string, method: string = 'POST', body?: any, forceFull: boolean = false): Promise<T> {
+  async makeRequest<T>(
+    endpoint: string,
+    method: string = 'POST',
+    body?: any,
+    options?: boolean | MakeRequestOptions,
+  ): Promise<T> {
     let url = `${this.config.baseUrl || "https://api.dataforseo.com"}${endpoint}`;
-    if (
-      !defaultGlobalToolConfig.fullResponse &&
-      !defaultGlobalToolConfig.includeUsage &&
-      !forceFull
-    ) {
+    const requestOptions = normalizeMakeRequestOptions(options);
+
+    if (!shouldUseFullApiEndpoint(defaultGlobalToolConfig, requestOptions)) {
       url += '.ai';
     }
 

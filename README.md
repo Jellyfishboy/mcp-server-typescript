@@ -139,8 +139,23 @@ npm run http
 Set `DATAFORSEO_INCLUDE_USAGE=true` when MCP hosts need the USD cost of each API call
 (for billing, quotas, or observability). When enabled:
 
-- Requests use the full DataForSEO API (not the `.ai` shorthand endpoints).
-- Tool responses are wrapped:
+- Billable tools use the full DataForSEO API (not the `.ai` shorthand endpoints) so cost fields are available.
+- Standard tool responses are wrapped with usage metadata; the inner `data` payload matches `DATAFORSEO_FULL_RESPONSE=true` for that tool.
+- Field configuration (`FIELD_CONFIG_PATH`) applies to the inner `data` payload only; `usage` is never filtered.
+- Utility location/list tools always use `.ai` endpoints and keep their original response shapes (no `usage` wrapper).
+
+#### Flag matrix
+
+| `DATAFORSEO_FULL_RESPONSE` | `DATAFORSEO_INCLUDE_USAGE` | Billable tools |
+| --- | --- | --- |
+| `false` | `false` | `.ai` endpoint; concise tool payload (default) |
+| `true` | `false` | Full API; `tasks[0].result` payload |
+| `false` | `true` | Full API; `{ data, usage }` wrapper; `data` is `tasks[0].result` |
+| `true` | `true` | Full API; `{ data, usage }` wrapper; `data` is `tasks[0].result` |
+
+Utility tools (`merchant_amazon_locations`, `ai_optimization_chat_gpt_scraper_locations`, `ai_opt_llm_ment_loc_and_lang`, `ai_opt_kw_data_loc_and_lang`) are unaffected by `DATAFORSEO_INCLUDE_USAGE` and never include usage metadata.
+
+When `DATAFORSEO_INCLUDE_USAGE=true`, tool responses are wrapped:
 
 ```json
 {
@@ -153,6 +168,8 @@ Set `DATAFORSEO_INCLUDE_USAGE=true` when MCP hosts need the USD cost of each API
   }
 }
 ```
+
+Bespoke tools preserve their custom payload shapes inside `data` when usage metadata is enabled (for example, `on_page_content_parsing` returns a markdown string; `dataforseo_labs_google_historical_serps` returns its filtered item list).
 
 When `DATAFORSEO_INCLUDE_USAGE` is `false` (default), response shape and behavior are unchanged.
 

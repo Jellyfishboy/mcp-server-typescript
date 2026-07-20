@@ -1,7 +1,14 @@
 import { z } from 'zod';
 import { DataForSEOClient } from '../../../../../client/dataforseo.client.js';
 import { BaseTool, DataForSEOFullResponse, DataForSEOResponse } from '../../../../base.tool.js';
-import { date } from 'zod/v4';
+
+const HISTORICAL_SERP_FIELDS = [
+  'datetime',
+  'items.type',
+  'items.title',
+  'items.domain',
+  'items.rank_absolute',
+];
 
 export class GoogleHistoricalSERP extends BaseTool {
   constructor(client: DataForSEOClient) {
@@ -38,6 +45,31 @@ example:
     };
   }
 
+  protected extractToolPayload(
+    response: DataForSEOFullResponse | DataForSEOResponse,
+    mode: 'ai' | 'full',
+  ): unknown {
+    const items = mode === 'ai'
+      ? (response as DataForSEOResponse).items
+      : this.getHistoricalSerpItemsFromFullResponse(response as DataForSEOFullResponse);
+
+    return items.map((item) => this.filterResponseFields(item, HISTORICAL_SERP_FIELDS));
+  }
+
+  private getHistoricalSerpItemsFromFullResponse(response: DataForSEOFullResponse): any[] {
+    const result = response.tasks[0].result;
+
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (result && typeof result === 'object' && Array.isArray((result as { items?: unknown[] }).items)) {
+      return (result as { items: any[] }).items;
+    }
+
+    return result ? [result] : [];
+  }
+
   async handle(params: any): Promise<any> {
     try {
       const response = await this.dataForSEOClient.makeRequest('/v3/dataforseo_labs/google/historical_serps/live', 'POST', [{
@@ -48,26 +80,9 @@ example:
         date_to: params.date_to
       }]);
 
-      console.error(JSON.stringify(response));
-      if (this.usesFullApiResponse()) {
-        return this.validateAndFormatResponse(response);
-      }
-
-      {
-        let data = response as DataForSEOResponse;
-        this.validateResponse(data);
-        let result = data.items;
-        let filteredResult = result.map(item => this.filterResponseFields(item, [     
-          "datetime",
-          "items.type",
-          "items.title",
-          "items.domain",
-          "items.rank_absolute"]));
-          console.error(JSON.stringify(filteredResult));
-        return this.formatResponse(filteredResult);
-      }
-      } catch (error) {
+      return this.validateAndFormatResponse(response);
+    } catch (error) {
       return this.formatErrorResponse(error);
     }
   }
-} 
+}

@@ -2,9 +2,21 @@ import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { DataForSEOClient } from '../client/dataforseo.client.js';
 import { defaultGlobalToolConfig } from '../config/global.tool.js';
+import { shouldParseAsFullResponse } from '../config/request-mode.js';
 import { DEFAULT_DATAFORSEO_TOOL_ANNOTATIONS } from '../config/tool-annotations.js';
 import { filterFields, parseFieldPaths } from '../utils/field-filter.js';
 import { FieldConfigurationManager } from '../config/field-configuration.js';
+import {
+  serializeToolResponsePayload,
+  wrapPayloadWithUsage,
+  type DataForSEOUsageMetadata,
+  type DataForSEOUsageWrappedResponse,
+} from '../response/tool-response.js';
+
+export type {
+  DataForSEOUsageMetadata,
+  DataForSEOUsageWrappedResponse,
+} from '../response/tool-response.js';
 
 export interface DataForSEOFullResponse {
   version: string;
@@ -32,18 +44,6 @@ export interface DataForSEOResponse {
   status_code: number;
   status_message: string;
   items: any[];
-}
-
-export interface DataForSEOUsageMetadata {
-  cost_usd: number;
-  task_cost_usd: number;
-  tasks_count: number;
-  tasks_error: number;
-}
-
-export interface DataForSEOUsageWrappedResponse<T = unknown> {
-  data: T;
-  usage: DataForSEOUsageMetadata;
 }
 
 export abstract class BaseTool {
@@ -80,76 +80,93 @@ export abstract class BaseTool {
     return filterExpression;
   }
 
-  protected usesFullApiResponse(): boolean {
-    return (
-      defaultGlobalToolConfig.fullResponse ||
-      defaultGlobalToolConfig.includeUsage ||
-      this.supportOnlyFullResponse()
-    );
+  protected shouldParseAsFullResponse(): boolean {
+    return shouldParseAsFullResponse(defaultGlobalToolConfig);
   }
 
-  protected buildUsageMetadata(response: DataForSEOFullResponse): DataForSEOUsageMetadata {
-    const task = response.tasks[0];
+  protected extractToolPayload(
+    response: DataForSEOFullResponse | DataForSEOResponse,
+    mode: 'ai' | 'full',
+  ): unknown {
+    if (mode === 'full') {
+      return (response as DataForSEOFullResponse).tasks[0].result;
+    }
 
-    return {
-      cost_usd: response.cost,
-      task_cost_usd: task?.cost ?? response.cost,
-      tasks_count: response.tasks_count,
-      tasks_error: response.tasks_error,
-    };
+    return response;
   }
 
-  protected wrapWithUsageIfEnabled<T>(
-    data: T,
-    response?: DataForSEOFullResponse,
-  ): T | DataForSEOUsageWrappedResponse<T> {
-    if (!defaultGlobalToolConfig.includeUsage) {
-      return data;
-    }
-
-    if (!response) {
-      throw new Error('Usage metadata requires a full DataForSEO API response');
-    }
-
-    return {
-      data,
-      usage: this.buildUsageMetadata(response),
-    };
-  }
-
-  protected validateAndFormatResponse(response: any, fullData: boolean = false): { content: Array<{ type: string; text: string }> } {
-    if (defaultGlobalToolConfig.debug) {
-      console.error(JSON.stringify(response));
-    }
-    if (this.usesFullApiResponse()) {
-      const data = response as DataForSEOFullResponse;
-      this.validateResponseFull(data);
-      const result = data.tasks[0].result;
-      return this.formatResponse(this.wrapWithUsageIfEnabled(result, data), fullData);
-    }
-    this.validateResponse(response);
-    return this.formatResponse(response, fullData);
-  }
-
-  protected formatResponse(data: any, fullData: boolean = false): { content: Array<{ type: string; text: string }> } {
+  protected applyConfiguredFieldFilter(payload: unknown, fullData: boolean = false): unknown {
     const fieldConfig = FieldConfigurationManager.getInstance();
-    if (fieldConfig.hasConfiguration()) {
-      const toolName = this.getName();
-      if (fieldConfig.isToolConfigured(toolName) && !fullData) {
-        const fields = fieldConfig.getFieldsForTool(toolName);
-        if (fields && fields.length > 0) {
-          data = filterFields(data, parseFieldPaths(fields));
-        }
-      }
+    if (!fieldConfig.hasConfiguration() || fullData) {
+      return payload;
     }
+
+    const toolName = this.getName();
+    if (!fieldConfig.isToolConfigured(toolName)) {
+      return payload;
+    }
+
+    const fields = fieldConfig.getFieldsForTool(toolName);
+    if (!fields || fields.length === 0) {
+      return payload;
+    }
+
+    return filterFields(payload, parseFieldPaths(fields));
+  }
+
+  protected formatToolOutput(
+    payload: unknown,
+    options?: { billingResponse?: DataForSEOFullResponse; fullData?: boolean },
+  ): { content: Array<{ type: string; text: string }> } {
+    const filteredPayload = this.applyConfiguredFieldFilter(
+      payload,
+      options?.fullData ?? false,
+    );
+    const output = wrapPayloadWithUsage(
+      filteredPayload,
+      options?.billingResponse,
+      defaultGlobalToolConfig.includeUsage,
+    );
+
     return {
       content: [
         {
-          type: "text",
-          text: JSON.stringify(data, null, 2),
+          type: 'text',
+          text: serializeToolResponsePayload(output),
         },
       ],
     };
+  }
+
+  protected validateAndFormatResponse(
+    response: any,
+    fullData: boolean = false,
+  ): { content: Array<{ type: string; text: string }> } {
+    if (defaultGlobalToolConfig.debug) {
+      console.error(JSON.stringify(response));
+    }
+
+    if (this.shouldParseAsFullResponse()) {
+      const data = response as DataForSEOFullResponse;
+      this.validateResponseFull(data);
+      const payload = this.extractToolPayload(data, 'full');
+
+      return this.formatToolOutput(payload, {
+        billingResponse: defaultGlobalToolConfig.includeUsage ? data : undefined,
+        fullData,
+      });
+    }
+
+    this.validateResponse(response);
+    const payload = this.extractToolPayload(response, 'ai');
+    return this.formatToolOutput(payload, { fullData });
+  }
+
+  protected formatResponse(
+    data: any,
+    fullData: boolean = false,
+  ): { content: Array<{ type: string; text: string }> } {
+    return this.formatToolOutput(data, { fullData });
   }
 
   protected formatErrorResponse(error: unknown): { content: Array<{ type: string; text: string }> } {
@@ -233,4 +250,4 @@ export abstract class BaseTool {
     }
     return orderBy;
   }
-} 
+}

@@ -11,10 +11,6 @@ export class MerchantAmazonLocationsListTool extends BaseTool {
     return 'Merchant Amazon Locations';
   }
 
-  protected supportOnlyFullResponse(): boolean {
-    return true;
-  }
-
   getName(): string {
     return 'merchant_amazon_locations';
   }
@@ -47,7 +43,7 @@ if omitted, no name filtering is applied`),
       const endpoint = country
         ? `/v3/merchant/amazon/locations/${encodeURIComponent(country)}`
         : '/v3/merchant/amazon/locations';
-      const response = await this.dataForSEOClient.makeRequest<any>(endpoint, 'GET', null);
+      const response = await this.dataForSEOClient.makeRequest<any>(endpoint, 'GET', null, { forceAi: true });
       if (response.items && response.items.length > 0) {
         const nameFilter = typeof params?.location_name_contains === 'string' ? params.location_name_contains.trim().toLowerCase() : '';
         if (nameFilter) {

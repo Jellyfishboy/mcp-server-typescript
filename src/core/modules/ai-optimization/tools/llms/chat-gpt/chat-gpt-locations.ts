@@ -12,10 +12,6 @@ export class AiOptimizationChatGptLocationsTool extends BaseTool {
         return 'AI Optimization Chat GPT Scraper Locations';
     }
 
-    protected supportOnlyFullResponse(): boolean {
-        return true;
-    }
-
     getName(): string {
         return "ai_optimization_chat_gpt_scraper_locations";
     }
@@ -43,7 +39,7 @@ export class AiOptimizationChatGptLocationsTool extends BaseTool {
             }
 
             let method = payload && Object.keys(payload).length > 0 ? 'POST' : 'GET';
-            const response = await this.dataForSEOClient.makeRequest(`/v3/ai_optimization/chat_gpt/llm_scraper/locations`, method, method === 'POST' ? [payload] : null) as any;
+            const response = await this.dataForSEOClient.makeRequest(`/v3/ai_optimization/chat_gpt/llm_scraper/locations`, method, method === 'POST' ? [payload] : null, { forceAi: true }) as any;
             return this.formatResponse(response['items']);
         } catch (error) {
             return this.formatErrorResponse(error);
