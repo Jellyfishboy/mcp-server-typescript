@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { DataForSEOClient } from '../../../../../client/dataforseo.client.js';
 import { BaseTool, DataForSEOFullResponse, DataForSEOResponse } from '../../../../base.tool.js';
-import { defaultGlobalToolConfig } from '../../../../../config/global.tool.js';
 import { date } from 'zod/v4';
 
 export class GoogleHistoricalSERP extends BaseTool {
@@ -50,10 +49,11 @@ example:
       }]);
 
       console.error(JSON.stringify(response));
-      if(defaultGlobalToolConfig.fullResponse || this.supportOnlyFullResponse()){
+      if (this.usesFullApiResponse()) {
         return this.validateAndFormatResponse(response);
       }
-      else {
+
+      {
         let data = response as DataForSEOResponse;
         this.validateResponse(data);
         let result = data.items;

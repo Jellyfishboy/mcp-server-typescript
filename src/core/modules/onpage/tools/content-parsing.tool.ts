@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { BaseTool, DataForSEOFullResponse } from '../../base.tool.js';
 import { DataForSEOClient } from '../../../client/dataforseo.client.js';
 import { DataForSEOResponse } from '../../base.tool.js';
-import { defaultGlobalToolConfig } from '../../../config/global.tool.js';
 
 export class ContentParsingTool extends BaseTool {
   constructor(dataForSEOClient: DataForSEOClient) {
@@ -45,18 +44,17 @@ export class ContentParsingTool extends BaseTool {
         markdown_view: true
       }]);
       console.error(JSON.stringify(response));
-      if(defaultGlobalToolConfig.fullResponse || this.supportOnlyFullResponse()){
-        let data = response as DataForSEOFullResponse;
+      if (this.usesFullApiResponse()) {
+        const data = response as DataForSEOFullResponse;
         this.validateResponseFull(data);
-        let result = data.tasks[0].result;
-        return this.formatResponse(result);
+        const result = data.tasks[0].result;
+        return this.formatResponse(this.wrapWithUsageIfEnabled(result, data));
       }
-      else{
-        let data = response as DataForSEOResponse;
-        this.validateResponse(data);
-        let result = data.items[0].page_as_markdown;
-        return this.formatResponse(result);
-      }
+
+      const data = response as DataForSEOResponse;
+      this.validateResponse(data);
+      const result = data.items[0].page_as_markdown;
+      return this.formatResponse(result);
     } catch (error) {
       return this.formatErrorResponse(error);
     }

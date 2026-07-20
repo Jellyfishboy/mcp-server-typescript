@@ -34,6 +34,18 @@ export interface DataForSEOResponse {
   items: any[];
 }
 
+export interface DataForSEOUsageMetadata {
+  cost_usd: number;
+  task_cost_usd: number;
+  tasks_count: number;
+  tasks_error: number;
+}
+
+export interface DataForSEOUsageWrappedResponse<T = unknown> {
+  data: T;
+  usage: DataForSEOUsageMetadata;
+}
+
 export abstract class BaseTool {
   protected dataForSEOClient: DataForSEOClient;
 
@@ -68,15 +80,52 @@ export abstract class BaseTool {
     return filterExpression;
   }
 
+  protected usesFullApiResponse(): boolean {
+    return (
+      defaultGlobalToolConfig.fullResponse ||
+      defaultGlobalToolConfig.includeUsage ||
+      this.supportOnlyFullResponse()
+    );
+  }
+
+  protected buildUsageMetadata(response: DataForSEOFullResponse): DataForSEOUsageMetadata {
+    const task = response.tasks[0];
+
+    return {
+      cost_usd: response.cost,
+      task_cost_usd: task?.cost ?? response.cost,
+      tasks_count: response.tasks_count,
+      tasks_error: response.tasks_error,
+    };
+  }
+
+  protected wrapWithUsageIfEnabled<T>(
+    data: T,
+    response?: DataForSEOFullResponse,
+  ): T | DataForSEOUsageWrappedResponse<T> {
+    if (!defaultGlobalToolConfig.includeUsage) {
+      return data;
+    }
+
+    if (!response) {
+      throw new Error('Usage metadata requires a full DataForSEO API response');
+    }
+
+    return {
+      data,
+      usage: this.buildUsageMetadata(response),
+    };
+  }
+
   protected validateAndFormatResponse(response: any, fullData: boolean = false): { content: Array<{ type: string; text: string }> } {
     if (defaultGlobalToolConfig.debug) {
       console.error(JSON.stringify(response));
     }
-    if (defaultGlobalToolConfig.fullResponse || this.supportOnlyFullResponse()) {
-      let data = response as DataForSEOFullResponse;
+    if (this.usesFullApiResponse()) {
+      const data = response as DataForSEOFullResponse;
       this.validateResponseFull(data);
-      let result = data.tasks[0].result;
-      return this.formatResponse(result, fullData);
+      const result = data.tasks[0].result;
+      return this.formatResponse(this.wrapWithUsageIfEnabled(result, data), fullData);
     }
     this.validateResponse(response);
     return this.formatResponse(response, fullData);

@@ -56,6 +56,12 @@ export DATAFORSEO_FULL_RESPONSE="false"
 # If set to true, a simplified version of the filters schema will be used.
 # This is required for ChatGPT APIs or other LLMs that cannot handle nested structures.
 export DATAFORSEO_SIMPLE_FILTER="false"
+
+# Optional: include API usage/cost metadata in tool responses
+# If set to true, tool responses are wrapped with billing metadata from the DataForSEO API.
+# This automatically uses the full (non-.ai) API so cost fields are available.
+# Default: false (preserves existing response shape and behavior)
+export DATAFORSEO_INCLUDE_USAGE="false"
 ```
 
 ## Installation as an NPM Package
@@ -125,7 +131,30 @@ npm run http
    # Optional
    export DATAFORSEO_SIMPLE_FILTER="false"
    export DATAFORSEO_FULL_RESPONSE="true"
+   export DATAFORSEO_INCLUDE_USAGE="false"
    ```
+
+### Usage metadata (optional)
+
+Set `DATAFORSEO_INCLUDE_USAGE=true` when MCP hosts need the USD cost of each API call
+(for billing, quotas, or observability). When enabled:
+
+- Requests use the full DataForSEO API (not the `.ai` shorthand endpoints).
+- Tool responses are wrapped:
+
+```json
+{
+  "data": { "...": "same payload as DATAFORSEO_FULL_RESPONSE=true" },
+  "usage": {
+    "cost_usd": 0.004,
+    "task_cost_usd": 0.004,
+    "tasks_count": 1,
+    "tasks_error": 0
+  }
+}
+```
+
+When `DATAFORSEO_INCLUDE_USAGE` is `false` (default), response shape and behavior are unchanged.
 
 ## Cloudflare Worker Deployment
 
@@ -172,6 +201,7 @@ The worker uses the same environment variables as the standard server:
 - `ENABLED_MODULES`: Comma-separated list of modules to enable
 - `ENABLED_PROMPTS`: Comma-separated list of prompt names to enable 
 - `DATAFORSEO_FULL_RESPONSE`: Set to "true" for full API responses
+- `DATAFORSEO_INCLUDE_USAGE`: Set to "true" to wrap tool responses with USD usage metadata
 
 ### Worker Endpoints
 

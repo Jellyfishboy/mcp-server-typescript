@@ -15,7 +15,11 @@ export class DataForSEOClient {
 
   async makeRequest<T>(endpoint: string, method: string = 'POST', body?: any, forceFull: boolean = false): Promise<T> {
     let url = `${this.config.baseUrl || "https://api.dataforseo.com"}${endpoint}`;
-    if(!defaultGlobalToolConfig.fullResponse && !forceFull){
+    if (
+      !defaultGlobalToolConfig.fullResponse &&
+      !defaultGlobalToolConfig.includeUsage &&
+      !forceFull
+    ) {
       url += '.ai';
     }
 
