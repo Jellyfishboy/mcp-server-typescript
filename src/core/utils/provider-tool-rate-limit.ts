@@ -1,5 +1,11 @@
 import crypto from "crypto";
 
+import {
+  describePublicApiUrl,
+  logProviderToolRateLimit,
+  parseProviderToolRateLimitBody,
+} from "./provider-tool-rate-limit-log.js";
+
 const GOOGLE_SEARCH_TOOL_NAMES = new Set(["serp_organic_live_advanced"]);
 
 const UNMETERED_TOOL_NAMES = new Set([
@@ -81,6 +87,7 @@ export function mintRailsInternalJwt(secret: string): string {
 export async function enforceProviderToolRateLimit(
   accountId: string,
   toolName: string,
+  options?: { accountIdSource?: string },
 ): Promise<
   | { allowed: true }
   | { allowed: false; status: number; body: Record<string, unknown> }
@@ -92,7 +99,17 @@ export async function enforceProviderToolRateLimit(
 
   const publicApiUrl = process.env.PUBLIC_API_URL?.replace(/\/$/, "");
   const secret = process.env.MCP_SECRET_TOKEN;
+  const publicApi = describePublicApiUrl(publicApiUrl);
   if (!publicApiUrl || !secret) {
+    logProviderToolRateLimit("rate_limit_not_configured", {
+      account_id: accountId,
+      account_id_source: options?.accountIdSource,
+      tool_name: toolName,
+      metered_tool_key: meteredKey,
+      public_api_configured: publicApi.configured,
+      public_api_host: publicApi.host,
+      mcp_secret_configured: Boolean(secret),
+    });
     return {
       allowed: false,
       status: 503,
@@ -109,17 +126,71 @@ export async function enforceProviderToolRateLimit(
 
   const token = mintRailsInternalJwt(secret);
   const url = `${publicApiUrl}/internal/accounts/${accountId}/provider_tool_calls`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ tool_key: meteredKey, mode: "guard" }),
+  const startedAt = Date.now();
+  logProviderToolRateLimit("rate_limit_check_start", {
+    account_id: accountId,
+    account_id_source: options?.accountIdSource,
+    tool_name: toolName,
+    metered_tool_key: meteredKey,
+    public_api_host: publicApi.host,
+    public_api_has_v1_prefix: publicApi.hasV1Prefix,
+    mode: "guard",
   });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ tool_key: meteredKey, mode: "guard" }),
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Upstream rate-limit check failed";
+    logProviderToolRateLimit("rate_limit_check_failed", {
+      account_id: accountId,
+      account_id_source: options?.accountIdSource,
+      tool_name: toolName,
+      metered_tool_key: meteredKey,
+      public_api_host: publicApi.host,
+      duration_ms: Date.now() - startedAt,
+      upstream_error: message,
+    });
+    return {
+      allowed: false,
+      status: 502,
+      body: {
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message,
+        },
+        id: null,
+      },
+    };
+  }
+
+  const durationMs = Date.now() - startedAt;
 
   if (response.status === 429) {
     const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = parseProviderToolRateLimitBody(body);
+    logProviderToolRateLimit("rate_limit_denied", {
+      account_id: accountId,
+      account_id_source: options?.accountIdSource,
+      tool_name: toolName,
+      metered_tool_key: meteredKey,
+      public_api_host: publicApi.host,
+      duration_ms: durationMs,
+      http_status: response.status,
+      error_code: parsed.errorCode,
+      limit: parsed.limit,
+      current: parsed.current,
+      upstream_message: parsed.message,
+    });
     return {
       allowed: false,
       status: 429,
@@ -128,9 +199,7 @@ export async function enforceProviderToolRateLimit(
         error: {
           code: -32000,
           message:
-            (typeof body.details === "string" && body.details) ||
-            (typeof body.message === "string" && body.message) ||
-            "Provider tool daily limit reached",
+            parsed.message || "Provider tool daily limit reached",
         },
         id: null,
       },
@@ -138,7 +207,17 @@ export async function enforceProviderToolRateLimit(
   }
 
   if (!response.ok) {
-    const body = (await response.text().catch(() => "")) || "Upstream rate-limit check failed";
+    const bodyText = (await response.text().catch(() => "")) || "Upstream rate-limit check failed";
+    logProviderToolRateLimit("rate_limit_upstream_error", {
+      account_id: accountId,
+      account_id_source: options?.accountIdSource,
+      tool_name: toolName,
+      metered_tool_key: meteredKey,
+      public_api_host: publicApi.host,
+      duration_ms: durationMs,
+      http_status: response.status,
+      upstream_body: bodyText.slice(0, 500),
+    });
     return {
       allowed: false,
       status: 502,
@@ -146,12 +225,27 @@ export async function enforceProviderToolRateLimit(
         jsonrpc: "2.0",
         error: {
           code: -32000,
-          message: body,
+          message: bodyText,
         },
         id: null,
       },
     };
   }
+
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  const parsed = parseProviderToolRateLimitBody(body);
+  logProviderToolRateLimit("rate_limit_allowed", {
+    account_id: accountId,
+    account_id_source: options?.accountIdSource,
+    tool_name: toolName,
+    metered_tool_key: meteredKey,
+    public_api_host: publicApi.host,
+    duration_ms: durationMs,
+    http_status: response.status,
+    limit: parsed.limit,
+    current: parsed.current,
+    mode: parsed.mode,
+  });
 
   return { allowed: true };
 }
