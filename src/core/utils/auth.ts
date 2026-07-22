@@ -38,3 +38,30 @@ export function getTokenExpiration(authHeader: string | undefined): Date | null 
     return null;
   }
 }
+
+function isJwtBearerToken(token: string): boolean {
+  return token.split('.').length === 3;
+}
+
+/**
+ * OpenAI forwards `Authorization: Basic <DATAFORSEO_ACCESS_TOKEN>` directly.
+ * Anthropic's MCP connector sends the same credential via `authorization_token`,
+ * which arrives as `Authorization: Bearer <DATAFORSEO_ACCESS_TOKEN>`.
+ * DataForSEO's API only accepts Basic auth, so rewrite opaque Bearer tokens.
+ */
+export function normalizeDataForSEOAuthHeader(authHeader: string): string {
+  if (authHeader.startsWith('Basic ')) {
+    return authHeader;
+  }
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return authHeader;
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token || isJwtBearerToken(token)) {
+    return authHeader;
+  }
+
+  return `Basic ${token}`;
+}

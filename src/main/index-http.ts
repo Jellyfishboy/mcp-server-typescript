@@ -5,7 +5,7 @@ import { name, version } from '../core/utils/version.js';
 import { initializeFieldConfiguration } from '../core/config/field-configuration.js';
 import { initMcpServer } from "./init-mcp-server.js";
 import { buildBasicAuthHeader } from "../core/client/dataforseo.client.js";
-import { getTokenExpiration } from "../core/utils/auth.js";
+import { getTokenExpiration, normalizeDataForSEOAuthHeader } from "../core/utils/auth.js";
 import { defaultGlobalToolConfig } from "../core/config/global.tool.js";
 import { providerToolRateLimitMiddleware } from "../core/utils/provider-tool-rate-limit.middleware.js";
 
@@ -46,7 +46,7 @@ async function main() {
     const authHeader = req.headers.authorization;
 
     if (authHeader?.startsWith('Basic ')) {
-      req.authHeader = authHeader;
+      req.authHeader = normalizeDataForSEOAuthHeader(authHeader);
     } 
     else if (authHeader?.startsWith('Bearer ')) {
       const expirationDate = getTokenExpiration(authHeader);
@@ -69,7 +69,7 @@ async function main() {
         console.log('set bearer token')
       }
 
-      req.authHeader = authHeader;
+      req.authHeader = normalizeDataForSEOAuthHeader(authHeader);
     }
     else if (process.env.DATAFORSEO_USERNAME && process.env.DATAFORSEO_PASSWORD) {
       // Fall back to environment variables if no header credentials provided
